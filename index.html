@@ -1,0 +1,438 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="theme-color" content="#1B4332">
+<title>CrickScore</title>
+<link rel="manifest" href="manifest.json">
+<link rel="apple-touch-icon" href="assets/icon-192.png">
+<link rel="icon" href="assets/icon-192.png">
+<link rel="stylesheet" href="styles.css">
+</head>
+<body>
+
+<div class="app">
+
+  <!-- ============ HOME ============ -->
+  <section class="screen" id="screen-home" data-screen="home">
+    <header class="board-header">
+      <div class="board-title" data-flap-text="CRICKSCORE">CRICKSCORE</div>
+      <div class="seam-divider"></div>
+    </header>
+
+    <div class="screen-body">
+      <div id="home-empty" class="empty-state">
+        <div class="empty-ball">🏏</div>
+        <h2>No match yet</h2>
+        <p>Set your field, pick your teams, and let the umpire call play.</p>
+      </div>
+
+      <div id="home-resume" class="resume-card hidden">
+        <div class="resume-label" id="resume-label">Match in progress</div>
+        <div class="resume-teams">
+          <span id="resume-teamA">Team A</span>
+          <span class="vs">vs</span>
+          <span id="resume-teamB">Team B</span>
+        </div>
+        <div class="resume-meta">
+          <span id="resume-overs">— overs</span>
+          <span id="resume-place">—</span>
+        </div>
+        <div id="resume-score" class="resume-score hidden"></div>
+        <button class="btn btn-ghost" id="btn-resume">Resume setup</button>
+        <button class="btn btn-text" id="btn-discard">Discard match</button>
+      </div>
+
+      <div class="home-links">
+        <button class="btn btn-outline" id="btn-go-history">📜 History</button>
+        <button class="btn btn-outline" id="btn-go-stats">📊 Stats</button>
+      </div>
+    </div>
+
+    <div class="screen-footer">
+      <button class="btn btn-primary btn-big" id="btn-start-match">Start Match</button>
+    </div>
+  </section>
+
+  <!-- ============ SELECT TEAMS ============ -->
+  <section class="screen hidden" id="screen-teams" data-screen="teams">
+    <header class="bar">
+      <button class="btn-icon" data-back="home" aria-label="Back">←</button>
+      <h1>Select Teams</h1>
+      <span class="bar-spacer"></span>
+    </header>
+
+    <div class="screen-body">
+      <div class="picker-row">
+        <div class="picker-slot" id="slotA">
+          <div class="slot-label">Team A</div>
+          <div class="slot-value">Tap a team below</div>
+        </div>
+        <div class="picker-vs">vs</div>
+        <div class="picker-slot" id="slotB">
+          <div class="slot-label">Team B</div>
+          <div class="slot-value">Tap a team below</div>
+        </div>
+      </div>
+
+      <div class="list-header">
+        <span>Your teams</span>
+        <button class="btn btn-small btn-accent" id="btn-add-team">+ Add Team</button>
+      </div>
+
+      <div id="team-list" class="team-list"></div>
+      <p id="team-list-empty" class="muted hidden">No teams yet. Add one to get started.</p>
+    </div>
+
+    <div class="screen-footer">
+      <button class="btn btn-primary btn-big" id="btn-teams-continue" disabled>Continue</button>
+    </div>
+  </section>
+
+  <!-- ============ ADD TEAM ============ -->
+  <section class="screen hidden" id="screen-add-team" data-screen="add-team">
+    <header class="bar">
+      <button class="btn-icon" data-back="teams" aria-label="Back">←</button>
+      <h1>Create Team</h1>
+      <span class="bar-spacer"></span>
+    </header>
+
+    <div class="screen-body">
+      <label class="field-label" for="input-team-name">Team name</label>
+      <input class="text-input" id="input-team-name" placeholder="e.g. Royal Strikers" maxlength="30">
+
+      <div class="list-header">
+        <span>Players</span>
+        <span class="muted" id="player-count">0 added</span>
+      </div>
+
+      <div class="add-player-row">
+        <input class="text-input" id="input-player-name" placeholder="Player name">
+        <button class="btn btn-accent btn-small" id="btn-add-player">Add</button>
+      </div>
+
+      <div class="quick-actions">
+        <button class="btn btn-outline" id="btn-from-contacts">📇 Add from Contacts</button>
+        <button class="btn btn-outline" id="btn-whatsapp-invite">💬 Send WhatsApp Invite</button>
+      </div>
+      <p class="hint" id="contacts-hint"></p>
+
+      <div id="player-list" class="player-list"></div>
+    </div>
+
+    <div class="screen-footer">
+      <button class="btn btn-primary btn-big" id="btn-save-team">Save Team</button>
+    </div>
+  </section>
+
+  <!-- ============ MATCH DETAILS ============ -->
+  <section class="screen hidden" id="screen-details" data-screen="details">
+    <header class="bar">
+      <button class="btn-icon" data-back="teams" aria-label="Back">←</button>
+      <h1>Match Details</h1>
+      <span class="bar-spacer"></span>
+    </header>
+
+    <div class="screen-body">
+      <div class="matchup-pill">
+        <span id="details-teamA">Team A</span><span class="vs">vs</span><span id="details-teamB">Team B</span>
+      </div>
+
+      <label class="field-label" for="input-overs">Number of overs</label>
+      <input class="text-input" id="input-overs" type="number" min="1" max="50" placeholder="e.g. 20">
+
+      <label class="field-label" for="input-place">Place</label>
+      <div class="add-player-row">
+        <input class="text-input" id="input-place" placeholder="City / locality">
+        <button class="btn btn-accent btn-small" id="btn-add-place">+ Add</button>
+      </div>
+      <div id="place-chip-list" class="chip-select-row"></div>
+
+      <label class="field-label" for="input-field">Field name</label>
+      <div class="add-player-row">
+        <input class="text-input" id="input-field" placeholder="Ground / venue name">
+        <button class="btn btn-accent btn-small" id="btn-add-field">+ Add</button>
+      </div>
+      <div id="field-chip-list" class="chip-select-row"></div>
+
+      <label class="checkbox-row">
+        <input type="checkbox" id="input-single-batting">
+        <span>Single Batting — only one team bats, one innings, just calculates that score (no second innings, no result comparison)</span>
+      </label>
+
+      <button class="accordion-toggle" id="more-details-toggle">
+        <span>+ Add more details</span>
+        <span class="chev">⌄</span>
+      </button>
+      <div class="accordion-body hidden" id="more-details-body">
+        <p class="hint">Extra fields — pitch type, ball type, match format, umpires, and more.</p>
+        <div id="custom-field-list"></div>
+        <div class="add-player-row">
+          <input class="text-input" id="input-custom-label" placeholder="Field name (e.g. Ball type)">
+          <input class="text-input" id="input-custom-value" placeholder="Value (e.g. Tennis)">
+        </div>
+        <button class="btn btn-outline btn-small" id="btn-add-custom-field">+ Add field</button>
+      </div>
+    </div>
+
+    <div class="screen-footer">
+      <button class="btn btn-primary btn-big" id="btn-details-continue">Continue to Toss</button>
+    </div>
+  </section>
+
+  <!-- ============ TOSS ============ -->
+  <section class="screen hidden" id="screen-toss" data-screen="toss">
+    <header class="bar">
+      <button class="btn-icon" data-back="details" aria-label="Back">←</button>
+      <h1>The Toss</h1>
+      <span class="bar-spacer"></span>
+    </header>
+
+    <div class="screen-body toss-body">
+      <div class="coin-wrap">
+        <button class="coin" id="coin-flip" aria-label="Flip coin">
+          <span class="coin-face">🏏</span>
+        </button>
+        <p class="hint">Tap the coin to flip</p>
+      </div>
+
+      <div class="list-header"><span>Who won the toss?</span></div>
+      <div class="toss-team-row">
+        <button class="toss-team-btn" id="toss-pick-A" data-team="A">Team A</button>
+        <button class="toss-team-btn" id="toss-pick-B" data-team="B">Team B</button>
+      </div>
+
+      <div id="toss-decision-block" class="hidden">
+        <div class="list-header"><span id="toss-decision-label">Team A chooses to</span></div>
+        <div class="toss-team-row">
+          <button class="toss-team-btn" id="decision-bat" data-decision="bat">🏏 Bat</button>
+          <button class="toss-team-btn" id="decision-bowl" data-decision="bowl">⚾ Bowl</button>
+        </div>
+      </div>
+    </div>
+
+    <div class="screen-footer">
+      <button class="btn btn-primary btn-big" id="btn-toss-continue" disabled>Confirm &amp; Continue</button>
+    </div>
+  </section>
+
+  <!-- ============ SUMMARY ============ -->
+  <section class="screen hidden" id="screen-summary" data-screen="summary">
+    <header class="bar">
+      <span class="bar-spacer"></span>
+      <h1>All Set</h1>
+      <span class="bar-spacer"></span>
+    </header>
+
+    <div class="screen-body">
+      <div class="summary-card">
+        <div class="summary-row big">
+          <span id="summary-teamA">Team A</span><span class="vs">vs</span><span id="summary-teamB">Team B</span>
+        </div>
+        <div class="seam-divider small"></div>
+        <div class="summary-row"><span>Overs</span><strong id="summary-overs">—</strong></div>
+        <div class="summary-row"><span>Venue</span><strong id="summary-place">—</strong></div>
+        <div class="summary-row"><span>Ground</span><strong id="summary-field">—</strong></div>
+        <div class="summary-row"><span>Toss</span><strong id="summary-toss">—</strong></div>
+        <div class="summary-row"><span>Batting first</span><strong id="summary-batting">—</strong></div>
+        <div id="summary-custom-fields"></div>
+      </div>
+    </div>
+
+    <div class="screen-footer">
+      <button class="btn btn-primary btn-big" id="btn-start-innings">Start First Innings</button>
+      <button class="btn btn-text" id="btn-summary-home">Save &amp; back to home</button>
+    </div>
+  </section>
+
+  <!-- ============ INNINGS SETUP ============ -->
+  <section class="screen hidden" id="screen-innings-setup" data-screen="innings-setup">
+    <header class="bar">
+      <span class="bar-spacer"></span>
+      <h1 id="innings-setup-title">Innings 1</h1>
+      <span class="bar-spacer"></span>
+    </header>
+    <div class="screen-body">
+      <div class="matchup-pill" id="innings-setup-pill">Team A batting</div>
+
+      <div class="list-header"><span>Opening batsmen</span><span class="muted">pick 2, mark striker</span></div>
+      <div id="opener-list" class="select-list"></div>
+
+      <div class="list-header"><span>Opening bowler</span></div>
+      <div id="bowler-pick-list" class="select-list"></div>
+    </div>
+    <div class="screen-footer">
+      <button class="btn btn-primary btn-big" id="btn-innings-start" disabled>Start Innings</button>
+    </div>
+  </section>
+
+  <!-- ============ LIVE SCORING ============ -->
+  <section class="screen hidden" id="screen-live" data-screen="live">
+    <header class="bar">
+      <button class="btn-icon" id="btn-live-menu" aria-label="Menu">☰</button>
+      <h1 id="live-title">Innings 1</h1>
+      <button class="btn-icon" id="btn-live-scorecard" aria-label="Scorecard">📋</button>
+    </header>
+
+    <div class="screen-body live-body">
+      <div class="scoreboard">
+        <div class="score-main"><span id="live-score">0/0</span><span class="score-overs" id="live-overs">(0.0/20)</span></div>
+        <div class="score-sub" id="live-target"></div>
+        <div class="score-sub" id="live-rr"></div>
+      </div>
+
+      <div class="players-panel">
+        <div class="player-line active-batsman">
+          <span class="dot">●</span><span id="striker-name">Batsman 1</span>
+          <span class="pstat" id="striker-stat">0 (0)</span>
+        </div>
+        <div class="player-line">
+          <span class="dot dim">●</span><span id="nonstriker-name">Batsman 2</span>
+          <span class="pstat" id="nonstriker-stat">0 (0)</span>
+        </div>
+        <div class="player-line bowler-line">
+          <span class="ball-emoji">⚾</span><span id="bowler-name">Bowler</span>
+          <span class="pstat" id="bowler-stat">0-0-0</span>
+        </div>
+      </div>
+
+      <div class="this-over">
+        <span class="this-over-label">This over</span>
+        <div id="this-over-chips" class="chip-row"></div>
+      </div>
+
+      <div class="scoring-pad">
+        <div class="pad-row runs">
+          <button class="pad-btn" data-run="0">0</button>
+          <button class="pad-btn" data-run="1">1</button>
+          <button class="pad-btn" data-run="2">2</button>
+          <button class="pad-btn" data-run="3">3</button>
+          <button class="pad-btn pad-four" data-run="4">4</button>
+          <button class="pad-btn pad-six" data-run="6">6</button>
+        </div>
+        <div class="pad-row extras">
+          <button class="pad-btn pad-extra" id="pad-wide">Wide</button>
+          <button class="pad-btn pad-extra" id="pad-noball">No Ball</button>
+          <button class="pad-btn pad-extra" id="pad-bye">Bye</button>
+          <button class="pad-btn pad-extra" id="pad-legbye">Leg Bye</button>
+        </div>
+        <div class="pad-row">
+          <button class="pad-btn pad-wicket" id="pad-wicket">🎯 Wicket</button>
+          <button class="pad-btn pad-undo" id="pad-undo">↺ Undo</button>
+        </div>
+        <div id="pending-banner" class="pending-banner hidden"></div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ============ SCORECARD ============ -->
+  <section class="screen hidden" id="screen-scorecard" data-screen="scorecard">
+    <header class="bar">
+      <button class="btn-icon" id="btn-scorecard-back" aria-label="Back">←</button>
+      <h1>Scorecard</h1>
+      <span class="bar-spacer"></span>
+    </header>
+    <div class="screen-body" id="scorecard-body"></div>
+  </section>
+
+  <!-- ============ RESULT ============ -->
+  <section class="screen hidden" id="screen-result" data-screen="result">
+    <header class="bar">
+      <span class="bar-spacer"></span>
+      <h1>Match Result</h1>
+      <span class="bar-spacer"></span>
+    </header>
+    <div class="screen-body">
+      <div class="summary-card result-card">
+        <div class="result-trophy">🏆</div>
+        <div class="result-text" id="result-text">—</div>
+        <div class="seam-divider small"></div>
+        <div class="summary-row"><span id="result-teamA-name">Team A</span><strong id="result-teamA-score">0/0</strong></div>
+        <div class="summary-row" id="result-row-B"><span id="result-teamB-name">Team B</span><strong id="result-teamB-score">0/0</strong></div>
+      </div>
+      <div class="summary-card awards-card">
+        <div class="summary-row"><span>🏅 Man of the Match</span><strong id="result-motm">—</strong></div>
+        <div class="summary-row"><span>🏏 Top Scorer</span><strong id="result-topscorer">—</strong></div>
+        <div class="summary-row"><span>🎯 Top Bowler</span><strong id="result-topbowler">—</strong></div>
+      </div>
+      <button class="btn btn-outline btn-big" id="btn-result-scorecard">View Full Scorecard</button>
+      <button class="btn btn-outline btn-big" id="btn-result-share">📤 Share Result</button>
+    </div>
+    <div class="screen-footer">
+      <button class="btn btn-primary btn-big" id="btn-result-home">Back to Home</button>
+    </div>
+  </section>
+
+  <!-- ============ HISTORY ============ -->
+  <section class="screen hidden" id="screen-history" data-screen="history">
+    <header class="bar">
+      <button class="btn-icon" data-back="home" aria-label="Back">←</button>
+      <h1>History</h1>
+      <span class="bar-spacer"></span>
+    </header>
+    <div class="screen-body" id="history-body"></div>
+  </section>
+
+  <!-- ============ STATS ============ -->
+  <section class="screen hidden" id="screen-stats" data-screen="stats">
+    <header class="bar">
+      <button class="btn-icon" data-back="home" aria-label="Back">←</button>
+      <h1>Stats</h1>
+      <span class="bar-spacer"></span>
+    </header>
+    <div class="screen-body" id="stats-body"></div>
+  </section>
+
+</div>
+
+<!-- ============ WICKET MODAL ============ -->
+<div id="modal-wicket" class="modal-overlay hidden">
+  <div class="modal-card">
+    <div id="wicket-step-type">
+      <h3>How was the batsman out?</h3>
+      <div class="select-list" id="wicket-type-list">
+        <button class="select-item" data-out="Bowled">Bowled</button>
+        <button class="select-item" data-out="Caught">Caught</button>
+        <button class="select-item" data-out="LBW">LBW</button>
+        <button class="select-item" data-out="Run Out">Run Out</button>
+        <button class="select-item" data-out="Stumped">Stumped</button>
+        <button class="select-item" data-out="Hit Wicket">Hit Wicket</button>
+        <button class="select-item" data-out="Retired">Retired</button>
+      </div>
+      <button class="btn btn-text" id="btn-wicket-cancel">Cancel</button>
+    </div>
+    <div id="wicket-step-batsman" class="hidden">
+      <h3>Who's out?</h3>
+      <div class="select-list" id="wicket-who-out-list"></div>
+    </div>
+    <div id="wicket-step-next" class="hidden">
+      <h3>Next batsman in</h3>
+      <div class="select-list" id="wicket-next-batsman-list"></div>
+    </div>
+  </div>
+</div>
+
+<!-- ============ NEXT BOWLER MODAL ============ -->
+<div id="modal-bowler" class="modal-overlay hidden">
+  <div class="modal-card">
+    <h3>Over complete — pick the next bowler</h3>
+    <div class="select-list" id="next-bowler-list"></div>
+  </div>
+</div>
+
+<!-- ============ LIVE MENU MODAL ============ -->
+<div id="modal-live-menu" class="modal-overlay hidden">
+  <div class="modal-card">
+    <h3>Innings options</h3>
+    <button class="btn btn-outline btn-big" id="btn-menu-scorecard">📋 View Scorecard</button>
+    <button class="btn btn-outline btn-big" id="btn-menu-end-innings">⏭️ End Innings Now</button>
+    <button class="btn btn-text" id="btn-menu-close">Close</button>
+  </div>
+</div>
+
+<div id="toast" class="toast hidden"></div>
+
+<script src="app.js"></script>
+</body>
+</html>
