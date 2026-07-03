@@ -31,7 +31,7 @@ function emptyMatch(){
     id: uid(),
     teamAId: null, teamBId: null,
     overs: null, place: '', field: '', custom: [],
-    singleBatting: false,
+    lastManBats: false,
     tossWonBy: null, decision: null,
     battingFirstTeam: null,
     innings: [], currentInningsIndex: 0,
@@ -115,23 +115,30 @@ function renderHome(){
   const resume = document.getElementById('home-resume');
   const resumeBtn = document.getElementById('btn-resume');
   const scoreBox = document.getElementById('resume-score');
+  const prevCard = document.getElementById('home-prev-match');
 
   if(state.match){
     empty.classList.add('hidden');
     resume.classList.remove('hidden');
+    prevCard.classList.add('hidden');
     const a = getTeam(state.match.teamAId), b = getTeam(state.match.teamBId);
     document.getElementById('resume-teamA').textContent = a ? a.name : 'Team A';
     document.getElementById('resume-teamB').textContent = b ? b.name : 'Team B';
     document.getElementById('resume-overs').textContent = state.match.overs ? state.match.overs + ' overs' : 'Overs not set';
     document.getElementById('resume-place').textContent = state.match.place || 'Venue not set';
 
-    if(state.match.status === 'live'){
+    const inn = state.match.innings[state.match.currentInningsIndex];
+    if(state.match.status === 'live' && inn){
       document.getElementById('resume-label').textContent = 'Match live';
-      const inn = currentInnings();
       scoreBox.classList.remove('hidden');
       scoreBox.textContent = `${inn.totalRuns}/${inn.totalWickets} (${formatOvers(inn.legalBalls)})`;
       resumeBtn.textContent = 'Resume Scoring';
       resumeBtn.onclick = () => navigate('live');
+    } else if(state.match.status === 'live' && !inn){
+      document.getElementById('resume-label').textContent = `Between innings (${state.match.currentInningsIndex + 1} of 2)`;
+      scoreBox.classList.add('hidden');
+      resumeBtn.textContent = 'Set Up Next Innings';
+      resumeBtn.onclick = () => navigate('innings-setup');
     } else {
       document.getElementById('resume-label').textContent = 'Match in progress';
       scoreBox.classList.add('hidden');
@@ -141,6 +148,15 @@ function renderHome(){
   } else {
     empty.classList.remove('hidden');
     resume.classList.add('hidden');
+    if(state.matchHistory.length > 0){
+      const last = state.matchHistory[0];
+      prevCard.classList.remove('hidden');
+      const inn2 = last.innings[1];
+      document.getElementById('prev-match-teams').textContent = `${getMatchTeamName(last,'A')} vs ${getMatchTeamName(last,'B')}`;
+      document.getElementById('btn-prev-match').onclick = () => { state.viewingMatchId = last.id; navigate('result'); };
+    } else {
+      prevCard.classList.add('hidden');
+    }
   }
 }
 
@@ -179,8 +195,28 @@ function renderTeamsScreen(){
           <div class="tname">${escapeHtml(team.name)}</div>
           <div class="tcount">${team.players.length} player${team.players.length===1?'':'s'}</div>
         </div>
-        <div class="tcount">${state.match.teamAId===team.id ? 'TEAM A' : state.match.teamBId===team.id ? 'TEAM B' : 'Tap to pick'}</div>
+        <div class="team-card-actions">
+          <span class="tcount" style="align-self:center; margin-right:4px;">${state.match.teamAId===team.id ? 'TEAM A' : state.match.teamBId===team.id ? 'TEAM B' : 'Tap to pick'}</span>
+          <button class="team-icon-btn" data-action="edit" aria-label="Edit team">✏️</button>
+          <button class="team-icon-btn" data-action="delete" aria-label="Delete team">🗑️</button>
+        </div>
       `;
+      card.querySelector('[data-action="edit"]').addEventListener('click', (e) => {
+        e.stopPropagation();
+        editingTeamId = team.id;
+        draftTeam = { name: team.name, players: JSON.parse(JSON.stringify(team.players)) };
+        navigate('add-team');
+      });
+      card.querySelector('[data-action="delete"]').addEventListener('click', (e) => {
+        e.stopPropagation();
+        if(!confirm(`Delete "${team.name}"? This can't be undone.`)) return;
+        state.teams = state.teams.filter(t => t.id !== team.id);
+        if(state.match.teamAId === team.id) state.match.teamAId = null;
+        if(state.match.teamBId === team.id) state.match.teamBId = null;
+        saveState();
+        renderTeamsScreen();
+        toast('Team deleted');
+      });
       card.addEventListener('click', () => pickTeam(team.id));
       list.appendChild(card);
     });
@@ -206,18 +242,21 @@ function updateTeamSlots(){
   slotB.classList.toggle('filled', !!b);
   document.getElementById('btn-teams-continue').disabled = !(a && b);
 }
-document.getElementById('btn-add-team').addEventListener('click', () => { draftTeam = { name:'', players:[] }; navigate('add-team'); });
+document.getElementById('btn-add-team').addEventListener('click', () => { draftTeam = { name:'', players:[] }; editingTeamId = null; navigate('add-team'); });
 document.getElementById('btn-teams-continue').addEventListener('click', () => { saveState(); navigate('details'); });
 
 // ===================== ADD TEAM =====================
 let draftTeam = { name: '', players: [] };
+let editingTeamId = null;
 function renderAddTeamScreen(){
   document.getElementById('input-team-name').value = draftTeam.name;
   document.getElementById('input-player-name').value = '';
+  document.querySelector('#screen-add-team h1').textContent = editingTeamId ? 'Edit Team' : 'Create Team';
+  document.getElementById('btn-save-team').textContent = editingTeamId ? 'Save Changes' : 'Save Team';
   renderPlayerList();
   const hint = document.getElementById('contacts-hint');
   hint.textContent = ('contacts' in navigator && 'ContactsManager' in window)
-    ? '' : 'Contact picker isn\u2019t available in this browser — add players manually or invite via WhatsApp instead.';
+    ? '' : 'Contact picker isn\u2019t available in this browser — add players manually instead.';
 }
 function renderPlayerList(){
   const list = document.getElementById('player-list');
@@ -227,7 +266,7 @@ function renderPlayerList(){
     row.className = 'player-row';
     row.innerHTML = `
       <div><div class="pname">${escapeHtml(p.name)}</div>
-      ${p.source !== 'manual' ? `<div class="ptag">${p.source === 'contact' ? 'from contacts' : 'invited via whatsapp'}</div>` : ''}</div>
+      ${p.source === 'contact' ? '<div class="ptag">from contacts</div>' : ''}</div>
       <button class="remove-btn" aria-label="Remove">✕</button>`;
     row.querySelector('.remove-btn').addEventListener('click', () => {
       draftTeam.players = draftTeam.players.filter(pl => pl.id !== p.id);
@@ -257,21 +296,20 @@ document.getElementById('btn-from-contacts').addEventListener('click', async () 
     toast(`Added ${contacts.length} from contacts`);
   }catch(err){ toast('Couldn\u2019t open contacts'); }
 });
-document.getElementById('btn-whatsapp-invite').addEventListener('click', () => {
-  const teamName = draftTeam.name.trim() || 'our team';
-  const inviteCode = uid().toUpperCase();
-  const message = `🏏 You're invited to join "${teamName}" on CrickScore! Tap to join: https://crickscore.app/join/${inviteCode}`;
-  window.open(`https://wa.me/?text=${encodeURIComponent(message)}`, '_blank');
-  draftTeam.players.push({ id: uid(), name: `Pending invite (${inviteCode})`, source: 'whatsapp' });
-  renderPlayerList();
-  toast('WhatsApp invite ready — auto-join syncs once the backend update ships');
-});
 document.getElementById('btn-save-team').addEventListener('click', () => {
   const name = document.getElementById('input-team-name').value.trim();
   if(!name){ toast('Give your team a name first'); return; }
-  state.teams.push({ id: uid(), name, players: draftTeam.players, createdAt: Date.now() });
-  saveState();
-  toast('Team saved');
+  if(editingTeamId){
+    const team = getTeam(editingTeamId);
+    if(team){ team.name = name; team.players = draftTeam.players; }
+    editingTeamId = null;
+    saveState();
+    toast('Team updated');
+  } else {
+    state.teams.push({ id: uid(), name, players: draftTeam.players, createdAt: Date.now() });
+    saveState();
+    toast('Team saved');
+  }
   navigate('teams');
 });
 
@@ -283,7 +321,7 @@ function renderDetailsScreen(){
   document.getElementById('input-overs').value = m.overs || '';
   document.getElementById('input-place').value = m.place || '';
   document.getElementById('input-field').value = m.field || '';
-  document.getElementById('input-single-batting').checked = !!m.singleBatting;
+  document.getElementById('input-last-man-bats').checked = !!m.lastManBats;
   renderChipList('place-chip-list', state.places, 'input-place', 'place');
   renderChipList('field-chip-list', state.fields, 'input-field', 'field');
   renderCustomFields();
@@ -325,8 +363,8 @@ document.getElementById('btn-add-field').addEventListener('click', () => {
   renderChipList('field-chip-list', state.fields, 'input-field', 'field');
   toast('Field saved — tap it next time instead of typing');
 });
-document.getElementById('input-single-batting').addEventListener('change', (e) => {
-  state.match.singleBatting = e.target.checked;
+document.getElementById('input-last-man-bats').addEventListener('change', (e) => {
+  state.match.lastManBats = e.target.checked;
   saveState();
 });
 ['input-overs','input-place','input-field'].forEach(id => {
@@ -387,8 +425,19 @@ function renderTossScreen(){
   document.getElementById('btn-toss-continue').disabled = !(m.tossWonBy && m.decision);
 }
 document.getElementById('coin-flip').addEventListener('click', (e) => {
-  e.currentTarget.classList.remove('spin');
-  requestAnimationFrame(() => e.currentTarget.classList.add('spin'));
+  const coin = e.currentTarget;
+  coin.classList.remove('spin');
+  document.getElementById('coin-hint').textContent = 'Flipping...';
+  requestAnimationFrame(() => coin.classList.add('spin'));
+  setTimeout(() => {
+    const m = state.match;
+    const winner = Math.random() < 0.5 ? 'A' : 'B';
+    m.tossWonBy = winner;
+    m.decision = null;
+    saveState();
+    document.getElementById('coin-hint').textContent = `${getMatchTeamName(m, winner)} won the toss! Tap again to re-flip, or pick below.`;
+    renderTossScreen();
+  }, 700);
 });
 document.getElementById('toss-pick-A').addEventListener('click', () => { state.match.tossWonBy='A'; saveState(); renderTossScreen(); });
 document.getElementById('toss-pick-B').addEventListener('click', () => { state.match.tossWonBy='B'; saveState(); renderTossScreen(); });
@@ -456,9 +505,13 @@ function renderInningsSetup(){
   document.getElementById('innings-setup-pill').textContent =
     `${getMatchTeamName(m, sides.battingTeamSide)} batting · ${getMatchTeamName(m, sides.bowlingTeamSide)} bowling`;
 
+  const minBatters = 2;
+  document.getElementById('opener-list-label').textContent = 'Opening batsmen';
+  document.getElementById('opener-list-hint').textContent = 'pick 2, mark striker';
+
   inningsDraft = {
     battingTeamSide: sides.battingTeamSide, bowlingTeamSide: sides.bowlingTeamSide,
-    squadBatting: squadFor(sides.battingTeamId, 2),
+    squadBatting: squadFor(sides.battingTeamId, minBatters),
     squadBowling: squadFor(sides.bowlingTeamId, 1),
     openers: [], bowlerId: null
   };
@@ -470,9 +523,10 @@ function renderInningsSetup(){
     btn.className = 'select-item';
     btn.innerHTML = `<span>${escapeHtml(p.name)}</span><span class="tag"></span>`;
     btn.addEventListener('click', () => {
+      const maxOpeners = 2;
       const i = inningsDraft.openers.indexOf(p.id);
       if(i > -1) inningsDraft.openers.splice(i,1);
-      else if(inningsDraft.openers.length < 2) inningsDraft.openers.push(p.id);
+      else if(inningsDraft.openers.length < maxOpeners) inningsDraft.openers.push(p.id);
       else { toast('Two openers already picked — tap one to swap'); return; }
       renderOpenerTags();
       checkInningsStartReady();
@@ -506,15 +560,17 @@ function renderOpenerTags(){
   });
 }
 function checkInningsStartReady(){
-  document.getElementById('btn-innings-start').disabled = !(inningsDraft.openers.length === 2 && inningsDraft.bowlerId);
+  const needed = 2;
+  document.getElementById('btn-innings-start').disabled = !(inningsDraft.openers.length === needed && inningsDraft.bowlerId);
 }
 document.getElementById('btn-innings-start').addEventListener('click', () => {
   const m = state.match, idx = m.currentInningsIndex;
-  const strikerId = inningsDraft.openers[0], nonStrikerId = inningsDraft.openers[1];
+  const strikerId = inningsDraft.openers[0];
+  const nonStrikerId = inningsDraft.openers[1];
   const inn = {
     battingTeam: inningsDraft.battingTeamSide, bowlingTeam: inningsDraft.bowlingTeamSide,
     squadBatting: inningsDraft.squadBatting, squadBowling: inningsDraft.squadBowling,
-    maxWickets: Math.max(inningsDraft.squadBatting.length - 1, 1),
+    maxWickets: m.lastManBats ? inningsDraft.squadBatting.length : Math.max(inningsDraft.squadBatting.length - 1, 1),
     totalRuns: 0, totalWickets: 0, legalBalls: 0,
     extras: { wide:0, noball:0, bye:0, legbye:0 },
     battingStats: {}, bowlingStats: {},
@@ -565,11 +621,17 @@ function renderLive(){
     rrEl.textContent = `Run rate: ${crr}`;
   }
 
-  const sB = inn.battingStats[inn.strikerId], nB = inn.battingStats[inn.nonStrikerId], bB = inn.bowlingStats[inn.bowlerId];
+  const sB = inn.battingStats[inn.strikerId], nB = inn.nonStrikerId ? inn.battingStats[inn.nonStrikerId] : null, bB = inn.bowlingStats[inn.bowlerId];
   document.getElementById('striker-name').textContent = sB.name + ' *';
   document.getElementById('striker-stat').textContent = `${sB.runs} (${sB.balls})`;
-  document.getElementById('nonstriker-name').textContent = nB.name;
-  document.getElementById('nonstriker-stat').textContent = `${nB.runs} (${nB.balls})`;
+  const nsLine = document.getElementById('nonstriker-name').closest('.player-line');
+  if(nB){
+    nsLine.classList.remove('hidden');
+    document.getElementById('nonstriker-name').textContent = nB.name;
+    document.getElementById('nonstriker-stat').textContent = `${nB.runs} (${nB.balls})`;
+  } else {
+    nsLine.classList.add('hidden');
+  }
   document.getElementById('bowler-name').textContent = bB.name;
   document.getElementById('bowler-stat').textContent = `${formatOvers(bB.balls)}-${bB.runs}-${bB.wickets}`;
 
@@ -629,8 +691,10 @@ function recordBallCore(d){
 
   if(d.isWicket){
     inn.totalWickets += 1;
-    striker.out = true;
-    striker.howOut = d.wicketType;
+    const dismissedId = (d.wicketType === 'Run Out' && d.dismissedEnd === 'nonStriker' && inn.nonStrikerId) ? inn.nonStrikerId : inn.strikerId;
+    const dismissedPlayer = inn.battingStats[dismissedId];
+    dismissedPlayer.out = true;
+    dismissedPlayer.howOut = d.wicketType;
     if(d.wicketType !== 'Run Out' && d.wicketType !== 'Retired') bowler.wickets += 1;
   }
 
@@ -642,7 +706,7 @@ function recordBallCore(d){
 
   saveState();
 }
-function swapStrike(inn){ const t = inn.strikerId; inn.strikerId = inn.nonStrikerId; inn.nonStrikerId = t; }
+function swapStrike(inn){ if(!inn.nonStrikerId) return; const t = inn.strikerId; inn.strikerId = inn.nonStrikerId; inn.nonStrikerId = t; }
 
 function checkInningsEnd(){
   const m = state.match, inn = currentInnings();
@@ -656,7 +720,7 @@ function checkInningsEnd(){
 
 function endInnings(){
   const m = state.match;
-  if(m.currentInningsIndex === 0 && !m.singleBatting){
+  if(m.currentInningsIndex === 0){
     m.currentInningsIndex = 1;
     saveState();
     navigate('innings-setup');
@@ -720,19 +784,15 @@ function computeMatchAwards(m){
 
 function finishMatch(){
   const m = state.match;
-  if(m.singleBatting || m.innings.length === 1){
-    m.result = { singleBatting: true, winnerSide: null, margin: null };
+  const inn1 = m.innings[0], inn2 = m.innings[1];
+  if(inn2.totalRuns > inn1.totalRuns){
+    const w = inn2.maxWickets - inn2.totalWickets;
+    m.result = { winnerSide: inn2.battingTeam, margin: `${w} wicket${w===1?'':'s'}` };
+  } else if(inn2.totalRuns < inn1.totalRuns){
+    const r = inn1.totalRuns - inn2.totalRuns;
+    m.result = { winnerSide: inn1.battingTeam, margin: `${r} run${r===1?'':'s'}` };
   } else {
-    const inn1 = m.innings[0], inn2 = m.innings[1];
-    if(inn2.totalRuns > inn1.totalRuns){
-      const w = inn2.maxWickets - inn2.totalWickets;
-      m.result = { winnerSide: inn2.battingTeam, margin: `${w} wicket${w===1?'':'s'}` };
-    } else if(inn2.totalRuns < inn1.totalRuns){
-      const r = inn1.totalRuns - inn2.totalRuns;
-      m.result = { winnerSide: inn1.battingTeam, margin: `${r} run${r===1?'':'s'}` };
-    } else {
-      m.result = { winnerSide: null, margin: null };
-    }
+    m.result = { winnerSide: null, margin: null };
   }
   m.awards = computeMatchAwards(m);
   m.status = 'completed';
@@ -751,7 +811,19 @@ function processDelivery(d){
     const inn = currentInnings();
     if(inn.battingOrder.length < inn.squadBatting.length){
       openNextBatsmanModal();
+    } else if(inn.nonStrikerId){
+      // No fresh batsman left, but maxWickets not reached yet (lastManBats mode):
+      // the surviving not-out partner carries on alone.
+      const lastBall = inn.ballLog[inn.ballLog.length - 1];
+      const nonStrikerWasOut = lastBall && lastBall.wicketType === 'Run Out' && lastBall.dismissedEnd === 'nonStriker';
+      if(!nonStrikerWasOut){ inn.strikerId = inn.nonStrikerId; }
+      inn.nonStrikerId = null;
+      saveState();
+      hideModal('modal-wicket');
+      if(inn.legalBalls > 0 && inn.legalBalls % 6 === 0) openNextBowlerModal();
+      else renderLive();
     } else {
+      hideModal('modal-wicket');
       checkInningsEnd();
       renderLive();
     }
@@ -808,7 +880,13 @@ function openNextBatsmanModal(){
 }
 function confirmNextBatsman(playerId){
   const inn = currentInnings();
-  inn.strikerId = playerId;
+  const lastBall = inn.ballLog[inn.ballLog.length - 1];
+  const nonStrikerWasOut = lastBall && lastBall.wicketType === 'Run Out' && lastBall.dismissedEnd === 'nonStriker';
+  if(nonStrikerWasOut){
+    inn.nonStrikerId = playerId;
+  } else {
+    inn.strikerId = playerId;
+  }
   inn.battingOrder.push(playerId);
   const nameObj = inn.squadBatting.find(p => p.id === playerId);
   inn.battingStats[playerId] = { name: nameObj ? nameObj.name : '?', runs:0, balls:0, fours:0, sixes:0, out:false, howOut:null };
@@ -821,15 +899,46 @@ document.getElementById('pad-wicket').addEventListener('click', () => {
   document.getElementById('wicket-step-type').classList.remove('hidden');
   document.getElementById('wicket-step-batsman').classList.add('hidden');
   document.getElementById('wicket-step-next').classList.add('hidden');
+  document.getElementById('wicket-step-runout-who').classList.add('hidden');
   showModal('modal-wicket');
 });
 document.getElementById('btn-wicket-cancel').addEventListener('click', () => hideModal('modal-wicket'));
+document.getElementById('btn-runout-cancel').addEventListener('click', () => hideModal('modal-wicket'));
 document.querySelectorAll('#wicket-type-list .select-item').forEach(btn => {
   btn.addEventListener('click', () => {
     const type = btn.dataset.out;
-    processDelivery({ type:'wicket', batRuns:0, extraRuns:0, isWicket:true, wicketType:type });
+    if(type === 'Run Out'){
+      const inn = currentInnings();
+      if(inn.nonStrikerId){
+        openRunOutWhoStep();
+        return;
+      }
+      // no non-striker on the field (lastManBats solo phase) — only one possible person to be out
+      processDelivery({ type:'wicket', batRuns:0, extraRuns:0, isWicket:true, wicketType:type, dismissedEnd:'striker' });
+      return;
+    }
+    processDelivery({ type:'wicket', batRuns:0, extraRuns:0, isWicket:true, wicketType:type, dismissedEnd:'striker' });
   });
 });
+function openRunOutWhoStep(){
+  document.getElementById('wicket-step-type').classList.add('hidden');
+  document.getElementById('wicket-step-runout-who').classList.remove('hidden');
+  const inn = currentInnings();
+  const list = document.getElementById('wicket-runout-who-list');
+  list.innerHTML = '';
+  const striker = inn.battingStats[inn.strikerId];
+  const nonStriker = inn.battingStats[inn.nonStrikerId];
+  const strikerBtn = document.createElement('button');
+  strikerBtn.className = 'select-item';
+  strikerBtn.textContent = `${striker.name} (striker)`;
+  strikerBtn.addEventListener('click', () => processDelivery({ type:'wicket', batRuns:0, extraRuns:0, isWicket:true, wicketType:'Run Out', dismissedEnd:'striker' }));
+  list.appendChild(strikerBtn);
+  const nonStrikerBtn = document.createElement('button');
+  nonStrikerBtn.className = 'select-item';
+  nonStrikerBtn.textContent = `${nonStriker.name} (non-striker)`;
+  nonStrikerBtn.addEventListener('click', () => processDelivery({ type:'wicket', batRuns:0, extraRuns:0, isWicket:true, wicketType:'Run Out', dismissedEnd:'nonStriker' }));
+  list.appendChild(nonStrikerBtn);
+}
 
 // ---- next bowler modal ----
 function openNextBowlerModal(){
@@ -905,12 +1014,25 @@ function renderInningsBlock(m, inn, i){
   const teamName = getMatchTeamName(m, inn.battingTeam);
   const totalExtras = inn.extras.wide + inn.extras.noball + inn.extras.bye + inn.extras.legbye;
 
+  let topScorerId = null, topScorerRuns = -1;
+  Object.keys(inn.battingStats).forEach(pid => {
+    if(inn.battingStats[pid].runs > topScorerRuns){ topScorerRuns = inn.battingStats[pid].runs; topScorerId = pid; }
+  });
+  let topBowlerId = null, topBowlerWkts = -1, topBowlerRuns = Infinity;
+  Object.keys(inn.bowlingStats).forEach(pid => {
+    const bw = inn.bowlingStats[pid];
+    if(bw.wickets > topBowlerWkts || (bw.wickets === topBowlerWkts && bw.runs < topBowlerRuns)){
+      topBowlerWkts = bw.wickets; topBowlerRuns = bw.runs; topBowlerId = pid;
+    }
+  });
+
   let battingRows = '';
   inn.battingOrder.forEach(pid => {
     const b = inn.battingStats[pid];
     const sr = b.balls > 0 ? ((b.runs / b.balls) * 100).toFixed(1) : '0.0';
     const status = b.out ? `<span class="howout">${escapeHtml(b.howOut)}</span>` : '<span class="howout">not out</span>';
-    battingRows += `<tr><td>${escapeHtml(b.name)}${status}</td><td class="num">${b.runs}</td><td class="num">${b.balls}</td><td class="num">${b.fours}</td><td class="num">${b.sixes}</td><td class="num">${sr}</td></tr>`;
+    const nameCls = pid === topScorerId && topScorerRuns > 0 ? 'top-performer' : '';
+    battingRows += `<tr><td><span class="${nameCls}">${escapeHtml(b.name)}</span>${status}</td><td class="num">${b.runs}</td><td class="num">${b.balls}</td><td class="num">${b.fours}</td><td class="num">${b.sixes}</td><td class="num">${sr}</td></tr>`;
   });
 
   let bowlingRows = '';
@@ -918,7 +1040,8 @@ function renderInningsBlock(m, inn, i){
     const bw = inn.bowlingStats[pid];
     const overs = formatOvers(bw.balls);
     const econ = bw.balls > 0 ? (bw.runs / (bw.balls/6)).toFixed(2) : '0.00';
-    bowlingRows += `<tr><td>${escapeHtml(bw.name)}</td><td class="num">${overs}</td><td class="num">${bw.runs}</td><td class="num">${bw.wickets}</td><td class="num">${econ}</td></tr>`;
+    const nameCls = pid === topBowlerId && topBowlerWkts > 0 ? 'top-performer' : '';
+    bowlingRows += `<tr><td><span class="${nameCls}">${escapeHtml(bw.name)}</span></td><td class="num">${overs}</td><td class="num">${bw.runs}</td><td class="num">${bw.wickets}</td><td class="num">${econ}</td></tr>`;
   });
 
   wrap.innerHTML = `
@@ -936,6 +1059,31 @@ function renderInningsBlock(m, inn, i){
   return wrap;
 }
 document.getElementById('btn-scorecard-back').addEventListener('click', () => navigate(scorecardReturnTo));
+document.getElementById('btn-scorecard-share').addEventListener('click', async () => {
+  const m = resolveScorecardMatch();
+  if(!m || m.innings.length === 0){ toast('Nothing to share yet'); return; }
+  let text = `🏏 CrickScore — Full Scorecard\n${m.place || ''} ${m.field ? '· '+m.field : ''}\n\n`;
+  m.innings.forEach(inn => {
+    text += `${getMatchTeamName(m, inn.battingTeam)}: ${inn.totalRuns}/${inn.totalWickets} (${formatOvers(inn.legalBalls)})\n`;
+    inn.battingOrder.forEach(pid => {
+      const b = inn.battingStats[pid];
+      text += `  ${b.name} — ${b.runs} (${b.balls}b)${b.out ? ' ' + b.howOut : ' not out'}\n`;
+    });
+    text += `  Extras: ${inn.extras.wide + inn.extras.noball + inn.extras.bye + inn.extras.legbye}\n`;
+    Object.keys(inn.bowlingStats).forEach(pid => {
+      const bw = inn.bowlingStats[pid];
+      text += `  ${bw.name} — ${formatOvers(bw.balls)}-${bw.runs}-${bw.wickets}\n`;
+    });
+    text += '\n';
+  });
+  text += 'Scored with CrickScore 🏏';
+  if(navigator.share){
+    try{ await navigator.share({ text }); }catch(e){}
+  } else {
+    try{ await navigator.clipboard.writeText(text); toast('Copied to clipboard'); }
+    catch(e){ toast('Could not share or copy'); }
+  }
+});
 
 // ===================== RESULT =====================
 function renderResultScreen(){
@@ -944,20 +1092,13 @@ function renderResultScreen(){
   const inn1 = m.innings[0], inn2 = m.innings[1];
   const rowB = document.getElementById('result-row-B');
 
-  if(m.result.singleBatting || !inn2){
-    document.getElementById('result-text').textContent = 'Innings complete';
-    document.getElementById('result-teamA-name').textContent = getMatchTeamName(m, inn1.battingTeam);
-    document.getElementById('result-teamA-score').textContent = `${inn1.totalRuns}/${inn1.totalWickets} (${formatOvers(inn1.legalBalls)})`;
-    rowB.classList.add('hidden');
-  } else {
-    rowB.classList.remove('hidden');
-    document.getElementById('result-teamA-name').textContent = getMatchTeamName(m, inn1.battingTeam);
-    document.getElementById('result-teamA-score').textContent = `${inn1.totalRuns}/${inn1.totalWickets} (${formatOvers(inn1.legalBalls)})`;
-    document.getElementById('result-teamB-name').textContent = getMatchTeamName(m, inn2.battingTeam);
-    document.getElementById('result-teamB-score').textContent = `${inn2.totalRuns}/${inn2.totalWickets} (${formatOvers(inn2.legalBalls)})`;
-    const r = m.result;
-    document.getElementById('result-text').textContent = r.winnerSide ? `${getMatchTeamName(m, r.winnerSide)} won by ${r.margin}` : 'Match tied!';
-  }
+  rowB.classList.remove('hidden');
+  document.getElementById('result-teamA-name').textContent = getMatchTeamName(m, inn1.battingTeam);
+  document.getElementById('result-teamA-score').textContent = `${inn1.totalRuns}/${inn1.totalWickets} (${formatOvers(inn1.legalBalls)})`;
+  document.getElementById('result-teamB-name').textContent = getMatchTeamName(m, inn2.battingTeam);
+  document.getElementById('result-teamB-score').textContent = `${inn2.totalRuns}/${inn2.totalWickets} (${formatOvers(inn2.legalBalls)})`;
+  const r = m.result;
+  document.getElementById('result-text').textContent = r.winnerSide ? `${getMatchTeamName(m, r.winnerSide)} won by ${r.margin}` : 'Match tied!';
 
   const aw = m.awards || computeMatchAwards(m);
   document.getElementById('result-motm').textContent = aw.motm ? aw.motm.name : '—';
@@ -969,26 +1110,26 @@ document.getElementById('btn-result-scorecard').addEventListener('click', () => 
   openScorecard(m, 'result');
 });
 document.getElementById('btn-result-home').addEventListener('click', () => navigate('home'));
+document.getElementById('btn-result-newmatch').addEventListener('click', () => {
+  state.match = emptyMatch();
+  saveState();
+  navigate('teams');
+});
 document.getElementById('btn-result-share').addEventListener('click', async () => {
   const m = getMatchById(state.viewingMatchId);
   if(!m) return;
   const inn1 = m.innings[0], inn2 = m.innings[1];
   const aw = m.awards || computeMatchAwards(m);
-  let text;
-  if(m.result.singleBatting || !inn2){
-    text = `🏏 ${getMatchTeamName(m, inn1.battingTeam)}\n` +
-      `Score: ${inn1.totalRuns}/${inn1.totalWickets} (${formatOvers(inn1.legalBalls)})\n` +
-      `🏅 Man of the Match: ${aw.motm ? aw.motm.name : '—'}\n` +
-      `📍 ${m.place || ''} ${m.field ? '· '+m.field : ''}\n\nScored with CrickScore 🏏`;
-  } else {
-    const r = m.result;
-    const resultLine = r.winnerSide ? `${getMatchTeamName(m, r.winnerSide)} won by ${r.margin}` : 'Match tied!';
-    text = `🏏 ${getMatchTeamName(m,'A')} vs ${getMatchTeamName(m,'B')}\n` +
-      `${getMatchTeamName(m, inn1.battingTeam)}: ${inn1.totalRuns}/${inn1.totalWickets} (${formatOvers(inn1.legalBalls)})\n` +
-      `${getMatchTeamName(m, inn2.battingTeam)}: ${inn2.totalRuns}/${inn2.totalWickets} (${formatOvers(inn2.legalBalls)})\n` +
-      `${resultLine}\n🏅 Man of the Match: ${aw.motm ? aw.motm.name : '—'}\n` +
-      `📍 ${m.place || ''} ${m.field ? '· '+m.field : ''}\n\nScored with CrickScore 🏏`;
-  }
+  const awardsLines = `🏅 Man of the Match: ${aw.motm ? aw.motm.name : '—'}\n` +
+    `🏏 Top Scorer: ${aw.topScorer ? aw.topScorer.name + ' (' + aw.topScorer.runs + ')' : '—'}\n` +
+    `🎯 Top Bowler: ${aw.topBowler ? aw.topBowler.name + ' (' + aw.topBowler.wickets + ' wkts)' : '—'}\n`;
+  const r = m.result;
+  const resultLine = r.winnerSide ? `${getMatchTeamName(m, r.winnerSide)} won by ${r.margin}` : 'Match tied!';
+  const text = `🏏 ${getMatchTeamName(m,'A')} vs ${getMatchTeamName(m,'B')}\n` +
+    `${getMatchTeamName(m, inn1.battingTeam)}: ${inn1.totalRuns}/${inn1.totalWickets} (${formatOvers(inn1.legalBalls)})\n` +
+    `${getMatchTeamName(m, inn2.battingTeam)}: ${inn2.totalRuns}/${inn2.totalWickets} (${formatOvers(inn2.legalBalls)})\n` +
+    `${resultLine}\n` + awardsLines +
+    `📍 ${m.place || ''} ${m.field ? '· '+m.field : ''}\n\nScored with CrickScore 🏏`;
   if(navigator.share){
     try{ await navigator.share({ text }); }catch(e){}
   } else {
@@ -1008,43 +1149,65 @@ function renderHistory(){
   state.matchHistory.forEach(m => {
     const inn1 = m.innings[0], inn2 = m.innings[1];
     const r = m.result;
-    let resultLine, scoreLine;
-    if(r.singleBatting || !inn2){
-      resultLine = 'Single innings';
-      scoreLine = `${inn1.totalRuns}/${inn1.totalWickets} (${formatOvers(inn1.legalBalls)})`;
-    } else {
-      resultLine = r.winnerSide ? `${getMatchTeamName(m, r.winnerSide)} won by ${r.margin}` : 'Match tied';
-      scoreLine = `${inn1.totalRuns}/${inn1.totalWickets} · ${inn2.totalRuns}/${inn2.totalWickets}`;
-    }
+    const resultLine = r.winnerSide ? `${getMatchTeamName(m, r.winnerSide)} won by ${r.margin}` : 'Match tied';
+    const scoreLine = `${inn1.totalRuns}/${inn1.totalWickets} · ${inn2.totalRuns}/${inn2.totalWickets}`;
     const motmName = (m.awards && m.awards.motm) ? m.awards.motm.name : null;
     const div = document.createElement('div');
     div.className = 'history-item';
     div.innerHTML = `
-      <div class="history-teams">${escapeHtml(getMatchTeamName(m,'A'))}${(r.singleBatting || !inn2) ? '' : ' vs ' + escapeHtml(getMatchTeamName(m,'B'))}</div>
+      <button class="history-delete" aria-label="Delete match">✕</button>
+      <div class="history-teams">${escapeHtml(getMatchTeamName(m,'A'))} vs ${escapeHtml(getMatchTeamName(m,'B'))}</div>
       <div class="history-meta">${escapeHtml(scoreLine)} — ${escapeHtml(resultLine)}</div>
       <div class="history-meta">${escapeHtml(m.place || '')} ${m.field ? '· '+escapeHtml(m.field) : ''} · ${new Date(m.createdAt).toLocaleDateString()}${motmName ? ' · 🏅 ' + escapeHtml(motmName) : ''}</div>
     `;
+    div.querySelector('.history-delete').addEventListener('click', (e) => {
+      e.stopPropagation();
+      if(!confirm('Delete this match from history? This also removes it from stats.')) return;
+      state.matchHistory = state.matchHistory.filter(x => x.id !== m.id);
+      saveState();
+      renderHistory();
+      toast('Match deleted');
+    });
     div.addEventListener('click', () => { state.viewingMatchId = m.id; openScorecard(m, 'history'); });
     body.appendChild(div);
   });
 }
 
 // ===================== STATS =====================
+let statsMonthFilter = 'all';
 function renderStats(){
   const body = document.getElementById('stats-body');
   if(state.matchHistory.length === 0){
     body.innerHTML = '<div class="empty-state"><div class="empty-ball">📊</div><h2>No stats yet</h2><p>Play your first match to see team and player stats here.</p></div>';
     return;
   }
+
+  const monthKey = (ts) => { const d = new Date(ts); return d.getFullYear() + '-' + String(d.getMonth()+1).padStart(2,'0'); };
+  const monthLabel = (key) => { const [y,mo] = key.split('-'); return new Date(Number(y), Number(mo)-1, 1).toLocaleString(undefined, { month:'long', year:'numeric' }); };
+  const months = [...new Set(state.matchHistory.map(m => monthKey(m.createdAt)))].sort().reverse();
+
+  const filtered = statsMonthFilter === 'all' ? state.matchHistory : state.matchHistory.filter(m => monthKey(m.createdAt) === statsMonthFilter);
+
+  let filterHtml = '<div class="stats-filter-row"><select id="stats-month-select"><option value="all">All time</option>';
+  months.forEach(key => { filterHtml += `<option value="${key}" ${statsMonthFilter===key?'selected':''}>${escapeHtml(monthLabel(key))}</option>`; });
+  filterHtml += '</select></div>';
+
+  if(filtered.length === 0){
+    body.innerHTML = filterHtml + '<p class="muted">No matches in this period.</p>' +
+      '<button class="btn btn-outline btn-big" id="btn-reset-stats" style="margin-top:20px;">🗑️ Reset All Stats &amp; History</button>';
+    wireStatsControls();
+    return;
+  }
+
   const teamRecord = {};
   state.teams.forEach(t => teamRecord[t.id] = { name: t.name, played:0, won:0, lost:0, tied:0 });
   const runs = {}, wickets = {}, motmCount = {};
 
-  state.matchHistory.forEach(m => {
+  filtered.forEach(m => {
     const idA = m.teamAId, idB = m.teamBId;
     [idA, idB].forEach(id => { if(teamRecord[id]) teamRecord[id].played++; });
     const r = m.result;
-    if(!r.singleBatting && m.innings[1]){
+    if(m.innings[1]){
       if(r.winnerSide){
         const winnerId = r.winnerSide === 'A' ? idA : idB;
         const loserId = r.winnerSide === 'A' ? idB : idA;
@@ -1078,7 +1241,8 @@ function renderStats(){
   const topWickets = Object.values(wickets).sort((a,b) => b.wickets - a.wickets).slice(0,10);
   const topMotm = Object.values(motmCount).sort((a,b) => b.count - a.count).slice(0,10);
 
-  let html = '<div class="stats-section"><div class="list-header"><span>Team record</span></div>';
+  let html = filterHtml;
+  html += '<div class="stats-section"><div class="list-header"><span>Team record</span></div>';
   Object.values(teamRecord).forEach(t => {
     html += `<div class="stats-row"><span>${escapeHtml(t.name)}</span><strong>${t.played} P · ${t.won} W · ${t.lost} L${t.tied?' · '+t.tied+' T':''}</strong></div>`;
   });
@@ -1097,7 +1261,23 @@ function renderStats(){
   topWickets.forEach(p => html += `<div class="stats-row"><span>${escapeHtml(p.name)}</span><strong>${p.wickets} wkts</strong></div>`);
   html += '</div>';
 
+  html += '<button class="btn btn-outline btn-big" id="btn-reset-stats">🗑️ Reset All Stats &amp; History</button>';
+
   body.innerHTML = html;
+  wireStatsControls();
+}
+function wireStatsControls(){
+  const sel = document.getElementById('stats-month-select');
+  if(sel) sel.addEventListener('change', (e) => { statsMonthFilter = e.target.value; renderStats(); });
+  const resetBtn = document.getElementById('btn-reset-stats');
+  if(resetBtn) resetBtn.addEventListener('click', () => {
+    if(!confirm('Reset ALL stats and match history? This deletes every completed match permanently and can\u2019t be undone.')) return;
+    state.matchHistory = [];
+    statsMonthFilter = 'all';
+    saveState();
+    renderStats();
+    toast('Stats and history reset');
+  });
 }
 
 // ===================== INIT =====================

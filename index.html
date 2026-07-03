@@ -44,6 +44,12 @@
         <button class="btn btn-text" id="btn-discard">Discard match</button>
       </div>
 
+      <div id="home-prev-match" class="prev-match-card hidden">
+        <div class="resume-label">Last match</div>
+        <div class="resume-teams" id="prev-match-teams">Team A vs Team B</div>
+        <button class="btn btn-outline" id="btn-prev-match">View Result</button>
+      </div>
+
       <div class="home-links">
         <button class="btn btn-outline" id="btn-go-history">📜 History</button>
         <button class="btn btn-outline" id="btn-go-stats">📊 Stats</button>
@@ -113,8 +119,7 @@
       </div>
 
       <div class="quick-actions">
-        <button class="btn btn-outline" id="btn-from-contacts">📇 Add from Contacts</button>
-        <button class="btn btn-outline" id="btn-whatsapp-invite">💬 Send WhatsApp Invite</button>
+        <button class="btn btn-outline" id="btn-from-contacts" style="flex:1">📇 Add from Contacts (select multiple)</button>
       </div>
       <p class="hint" id="contacts-hint"></p>
 
@@ -157,8 +162,8 @@
       <div id="field-chip-list" class="chip-select-row"></div>
 
       <label class="checkbox-row">
-        <input type="checkbox" id="input-single-batting">
-        <span>Single Batting — only one team bats, one innings, just calculates that score (no second innings, no result comparison)</span>
+        <input type="checkbox" id="input-last-man-bats">
+        <span>All players can bat — even when most are out, the last remaining batsman keeps batting alone until they're out too (instead of ending the innings early with one not-out)</span>
       </label>
 
       <button class="accordion-toggle" id="more-details-toggle">
@@ -192,9 +197,9 @@
     <div class="screen-body toss-body">
       <div class="coin-wrap">
         <button class="coin" id="coin-flip" aria-label="Flip coin">
-          <span class="coin-face">🏏</span>
+          <span class="coin-face" id="coin-face">🏏</span>
         </button>
-        <p class="hint">Tap the coin to flip</p>
+        <p class="hint" id="coin-hint">Tap the coin to flip — it'll pick the winner for you</p>
       </div>
 
       <div class="list-header"><span>Who won the toss?</span></div>
@@ -256,7 +261,7 @@
     <div class="screen-body">
       <div class="matchup-pill" id="innings-setup-pill">Team A batting</div>
 
-      <div class="list-header"><span>Opening batsmen</span><span class="muted">pick 2, mark striker</span></div>
+      <div class="list-header"><span id="opener-list-label">Opening batsmen</span><span class="muted" id="opener-list-hint">pick 2, mark striker</span></div>
       <div id="opener-list" class="select-list"></div>
 
       <div class="list-header"><span>Opening bowler</span></div>
@@ -331,7 +336,7 @@
     <header class="bar">
       <button class="btn-icon" id="btn-scorecard-back" aria-label="Back">←</button>
       <h1>Scorecard</h1>
-      <span class="bar-spacer"></span>
+      <button class="btn-icon" id="btn-scorecard-share" aria-label="Share">📤</button>
     </header>
     <div class="screen-body" id="scorecard-body"></div>
   </section>
@@ -360,7 +365,8 @@
       <button class="btn btn-outline btn-big" id="btn-result-share">📤 Share Result</button>
     </div>
     <div class="screen-footer">
-      <button class="btn btn-primary btn-big" id="btn-result-home">Back to Home</button>
+      <button class="btn btn-primary btn-big" id="btn-result-newmatch">Start Another Match</button>
+      <button class="btn btn-text" id="btn-result-home">Back to Home</button>
     </div>
   </section>
 
@@ -405,6 +411,11 @@
     <div id="wicket-step-batsman" class="hidden">
       <h3>Who's out?</h3>
       <div class="select-list" id="wicket-who-out-list"></div>
+    </div>
+    <div id="wicket-step-runout-who" class="hidden">
+      <h3>Who got run out?</h3>
+      <div class="select-list" id="wicket-runout-who-list"></div>
+      <button class="btn btn-text" id="btn-runout-cancel">Cancel</button>
     </div>
     <div id="wicket-step-next" class="hidden">
       <h3>Next batsman in</h3>

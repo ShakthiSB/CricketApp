@@ -89,6 +89,10 @@ body{
 
 .home-links{display:flex; gap:10px; margin-top:18px;}
 .home-links .btn{flex:1;}
+.prev-match-card{
+  background:var(--white); border-radius:12px; padding:14px 16px; margin-bottom:14px;
+  border-left:5px solid var(--pitch-green-light);
+}
 
 /* ---------- select teams ---------- */
 .picker-row{display:flex; align-items:center; gap:10px; margin-bottom:22px;}
@@ -105,6 +109,11 @@ body{
 .team-card.selected-b{border-color:var(--pitch-green-light);}
 .team-card .tname{font-weight:800; font-family:var(--display); font-stretch:condensed;}
 .team-card .tcount{font-size:12px; color:#5b6b62;}
+.team-card-actions{display:flex; gap:6px;}
+.team-icon-btn{
+  background:none; border:none; font-size:15px; padding:4px 6px; cursor:pointer; border-radius:6px;
+}
+.team-icon-btn:active{background:rgba(0,0,0,.08);}
 .muted{color:#5b6b62; font-size:13px;}
 
 /* ---------- add team ---------- */
@@ -238,12 +247,16 @@ table.score-table td.num, table.score-table th.num{text-align:right;}
 .result-text{font-family:var(--display); font-weight:800; font-stretch:condensed; font-size:18px; color:var(--ball-red); margin:8px 0;}
 
 /* ---------- history / stats ---------- */
-.history-item{background:var(--white); border-radius:12px; padding:14px 16px; margin-bottom:10px; cursor:pointer;}
+.history-item{background:var(--white); border-radius:12px; padding:14px 16px; margin-bottom:10px; cursor:pointer; position:relative;}
 .history-teams{font-family:var(--display); font-weight:800; font-stretch:condensed; font-size:15px;}
 .history-meta{font-size:12px; color:#5b6b62; margin-top:4px;}
+.history-delete{position:absolute; top:10px; right:12px; background:none; border:none; color:var(--ball-red); font-size:14px; cursor:pointer; padding:4px 8px;}
 .stats-section{margin-bottom:20px;}
 .stats-row{display:flex; justify-content:space-between; background:var(--white); border-radius:10px; padding:11px 14px; margin-bottom:7px; font-size:14px;}
 .stats-row strong{color:var(--pitch-green);}
+.stats-filter-row{display:flex; gap:8px; margin-bottom:16px;}
+.stats-filter-row select{flex:1; padding:11px 12px; border-radius:10px; border:1.5px solid #ddd2b3; background:var(--white); font-size:14px; font-family:var(--body);}
+.top-performer{font-weight:800; color:var(--pitch-green);}
 
 /* ---------- modals ---------- */
 .modal-overlay{
