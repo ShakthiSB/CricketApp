@@ -58,6 +58,7 @@
 
     <div class="screen-footer">
       <button class="btn btn-primary btn-big" id="btn-start-match">Start Match</button>
+      <div class="version-label">v1.4 · July 2026</div>
     </div>
   </section>
 
@@ -319,12 +320,14 @@
         <div class="pad-row extras">
           <button class="pad-btn pad-extra" id="pad-wide">Wide</button>
           <button class="pad-btn pad-extra" id="pad-noball">No Ball</button>
-          <button class="pad-btn pad-extra" id="pad-bye">Bye</button>
-          <button class="pad-btn pad-extra" id="pad-legbye">Leg Bye</button>
+          <button class="pad-btn pad-extra" id="pad-bye">Change Player</button>
         </div>
         <div class="pad-row">
           <button class="pad-btn pad-wicket" id="pad-wicket">🎯 Wicket</button>
           <button class="pad-btn pad-undo" id="pad-undo">↺ Undo</button>
+        </div>
+        <div class="pad-row-declare">
+          <button class="pad-btn pad-declare" id="pad-declare">🏳️ Declare</button>
         </div>
         <div id="pending-banner" class="pending-banner hidden"></div>
       </div>
@@ -419,6 +422,7 @@
     </div>
     <div id="wicket-step-next" class="hidden">
       <h3>Next batsman in</h3>
+      <p class="hint" id="wicket-next-hint"></p>
       <div class="select-list" id="wicket-next-batsman-list"></div>
     </div>
   </div>
@@ -437,13 +441,52 @@
   <div class="modal-card">
     <h3>Innings options</h3>
     <button class="btn btn-outline btn-big" id="btn-menu-scorecard">📋 View Scorecard</button>
+    <button class="btn btn-outline btn-big" id="btn-menu-edit-teams">✏️ Edit Playing Teams</button>
+    <button class="btn btn-outline btn-big" id="btn-menu-extra-overs">➕ Add Extra Overs</button>
     <button class="btn btn-outline btn-big" id="btn-menu-end-innings">⏭️ End Innings Now</button>
     <button class="btn btn-text" id="btn-menu-close">Close</button>
   </div>
 </div>
 
+<!-- ============ EDIT PLAYING XI MODAL ============ -->
+<div id="modal-edit-playing" class="modal-overlay hidden">
+  <div class="modal-card">
+    <h3 id="edit-playing-title">Edit Playing XI</h3>
+    <p class="hint">Tick the players who are playing in this match.</p>
+    <div class="select-list" id="edit-playing-list"></div>
+    <button class="btn btn-primary btn-big" id="btn-edit-playing-done" style="margin-top:14px;">Done</button>
+    <button class="btn btn-text" id="btn-edit-playing-cancel">Cancel</button>
+  </div>
+</div>
+
+<!-- ============ DECLARE MODAL ============ -->
+<div id="modal-declare" class="modal-overlay hidden">
+  <div class="modal-card">
+    <h3>Declare Innings</h3>
+    <p class="hint">Which team is declaring?</p>
+    <div class="select-list" id="declare-team-list"></div>
+    <button class="btn btn-text" id="btn-declare-cancel">Cancel</button>
+  </div>
+</div>
+
+<!-- ============ EDIT OVERS MODAL ============ -->
+<div id="modal-extra-overs" class="modal-overlay hidden">
+  <div class="modal-card">
+    <h3>Edit Overs</h3>
+    <p class="hint" id="extra-overs-current"></p>
+    <div class="overs-edit-row">
+      <button class="btn btn-outline overs-adj-btn" id="btn-overs-minus">−</button>
+      <span class="overs-display" id="overs-display">20</span>
+      <button class="btn btn-outline overs-adj-btn" id="btn-overs-plus">+</button>
+    </div>
+    <button class="btn btn-primary btn-big" id="btn-extra-overs-add" style="margin-top:14px;">Confirm</button>
+    <button class="btn btn-text" id="btn-extra-overs-cancel">Cancel</button>
+  </div>
+</div>
+
 <div id="toast" class="toast hidden"></div>
 
+<script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js"></script>
 <script src="app.js"></script>
 </body>
 </html>

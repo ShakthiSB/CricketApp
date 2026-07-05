@@ -61,6 +61,13 @@ function navigate(screen, push){
 }
 window.addEventListener('popstate', (e) => {
   const screen = (e.state && e.state.screen) || 'home';
+  // If a live match is in progress and user tries to go back, keep them on live
+  // and show a hint to use the menu instead.
+  if(state.match && state.match.status === 'live' && screen !== 'live'){
+    history.pushState({ screen: 'live' }, '', '#live');
+    toast('Use ☰ menu to end the innings or view the scorecard');
+    return;
+  }
   navigate(screen, false);
 });
 document.querySelectorAll('[data-back]').forEach(btn => btn.addEventListener('click', () => navigate(btn.dataset.back)));
@@ -263,11 +270,15 @@ function renderPlayerList(){
   list.innerHTML = '';
   draftTeam.players.forEach(p => {
     const row = document.createElement('div');
-    row.className = 'player-row';
+    row.className = 'player-checkbox-row';
+    const checked = p.playing !== false;
     row.innerHTML = `
-      <div><div class="pname">${escapeHtml(p.name)}</div>
-      ${p.source === 'contact' ? '<div class="ptag">from contacts</div>' : ''}</div>
+      <input type="checkbox" ${checked ? 'checked' : ''} aria-label="Playing">
+      <div class="pname">${escapeHtml(p.name)}${p.source === 'contact' ? '<span class="ptag" style="margin-left:6px;">contact</span>' : ''}</div>
       <button class="remove-btn" aria-label="Remove">✕</button>`;
+    row.querySelector('input[type=checkbox]').addEventListener('change', (e) => {
+      p.playing = e.target.checked;
+    });
     row.querySelector('.remove-btn').addEventListener('click', () => {
       draftTeam.players = draftTeam.players.filter(pl => pl.id !== p.id);
       renderPlayerList();
@@ -283,7 +294,7 @@ function addManualPlayer(){
   const input = document.getElementById('input-player-name');
   const name = input.value.trim();
   if(!name) return;
-  draftTeam.players.push({ id: uid(), name, source: 'manual' });
+  draftTeam.players.push({ id: uid(), name, source: 'manual', playing: true });
   input.value = '';
   renderPlayerList();
 }
@@ -291,7 +302,7 @@ document.getElementById('btn-from-contacts').addEventListener('click', async () 
   if(!('contacts' in navigator && 'ContactsManager' in window)){ toast('Contact picker not supported on this browser/device'); return; }
   try{
     const contacts = await navigator.contacts.select(['name'], { multiple: true });
-    contacts.forEach(c => draftTeam.players.push({ id: uid(), name: (c.name && c.name[0]) || 'Unnamed', source: 'contact' }));
+    contacts.forEach(c => draftTeam.players.push({ id: uid(), name: (c.name && c.name[0]) || 'Unnamed', source: 'contact', playing: true }));
     renderPlayerList();
     toast(`Added ${contacts.length} from contacts`);
   }catch(err){ toast('Couldn\u2019t open contacts'); }
@@ -478,7 +489,7 @@ document.getElementById('btn-start-innings').addEventListener('click', () => {
 // ===================== INNINGS SETUP =====================
 function squadFor(teamId, minCount){
   const team = getTeam(teamId);
-  const players = team ? team.players.map(p => ({ id: p.id, name: p.name })) : [];
+  const players = team ? team.players.filter(p => p.playing !== false).map(p => ({ id: p.id, name: p.name })) : [];
   while(players.length < minCount){
     players.push({ id: 'pad_' + teamId + '_' + players.length, name: 'Player ' + (players.length + 1) });
   }
@@ -565,6 +576,28 @@ function checkInningsStartReady(){
 }
 document.getElementById('btn-innings-start').addEventListener('click', () => {
   const m = state.match, idx = m.currentInningsIndex;
+
+  // Guard: if this innings was already started with real players (not placeholders),
+  // resume it rather than recreating and wiping all scoring data.
+  const existingInn = m.innings[idx];
+  const hasRealPlayers = existingInn &&
+    existingInn.battingStats &&
+    Object.keys(existingInn.battingStats).length >= 2 &&
+    existingInn.strikerId &&
+    existingInn.battingStats[existingInn.strikerId] &&
+    existingInn.battingStats[existingInn.strikerId].name !== '?';
+  if(hasRealPlayers){
+    m.status = 'live';
+    saveState();
+    navigate('live');
+    return;
+  }
+  // Validate openers and bowler are selected before proceeding
+  if(inningsDraft.openers.length < 2 || !inningsDraft.bowlerId){
+    toast('Please select 2 openers and a bowler first');
+    return;
+  }
+
   const strikerId = inningsDraft.openers[0];
   const nonStrikerId = inningsDraft.openers[1];
   const inn = {
@@ -603,6 +636,12 @@ function snapshotInnings(){
 
 function renderLive(){
   const m = state.match, inn = currentInnings();
+  // Guard: if innings state is missing or corrupt (e.g. after an interrupted setup),
+  // redirect to innings-setup so the user can set openers again without losing other data.
+  if(!inn || !inn.battingStats || !inn.battingStats[inn.strikerId]){
+    navigate('innings-setup');
+    return;
+  }
   document.getElementById('live-title').textContent = `Innings ${m.currentInningsIndex+1} · ${getMatchTeamName(m, inn.battingTeam)}`;
   document.getElementById('live-score').textContent = `${inn.totalRuns}/${inn.totalWickets}`;
   document.getElementById('live-overs').textContent = `(${formatOvers(inn.legalBalls)}/${m.overs})`;
@@ -660,14 +699,21 @@ function setPending(kind, label){
 
 function recordBallCore(d){
   const inn = currentInnings();
+  // changeplayer = not a legal ball, no stats recorded, just swaps strike
+  if(d.type === 'changeplayer'){
+    inn.thisOver.push({ label: '↔', cls: 'chip-extra' });
+    inn.ballLog.push(d);
+    swapStrike(inn);
+    saveState();
+    return;
+  }
   const legal = !['wide','noball'].includes(d.type);
   const cls = d.isWicket ? 'chip-wicket' : d.batRuns===4 ? 'chip-four' : d.batRuns===6 ? 'chip-six' : (d.type!=='normal' ? 'chip-extra' : '');
   let label;
   if(d.isWicket) label = 'W';
   else if(d.type==='wide') label = 'Wd';
   else if(d.type==='noball') label = 'Nb' + (d.batRuns>0?'+'+d.batRuns:'');
-  else if(d.type==='bye') label = 'B'+d.extraRuns;
-  else if(d.type==='legbye') label = 'Lb'+d.extraRuns;
+  else if(d.type==='bye') label = 'B';
   else label = String(d.batRuns);
   inn.thisOver.push({ label, cls });
 
@@ -701,8 +747,9 @@ function recordBallCore(d){
   if(legal) inn.legalBalls += 1;
   inn.ballLog.push(d);
 
-  const rotateRuns = (d.type==='bye'||d.type==='legbye') ? d.extraRuns : d.batRuns;
-  if(!d.isWicket && rotateRuns % 2 === 1) swapStrike(inn);
+  if(!d.isWicket){
+    if(d.batRuns % 2 === 1) swapStrike(inn);
+  }
 
   saveState();
 }
@@ -790,7 +837,8 @@ function finishMatch(){
     m.result = { winnerSide: inn2.battingTeam, margin: `${w} wicket${w===1?'':'s'}` };
   } else if(inn2.totalRuns < inn1.totalRuns){
     const r = inn1.totalRuns - inn2.totalRuns;
-    m.result = { winnerSide: inn1.battingTeam, margin: `${r} run${r===1?'':'s'}` };
+    const declared = inn1.completionReason === 'declared' ? ' (dec)' : '';
+    m.result = { winnerSide: inn1.battingTeam, margin: `${r} run${r===1?'':'s'}${declared}` };
   } else {
     m.result = { winnerSide: null, margin: null };
   }
@@ -842,15 +890,15 @@ document.querySelectorAll('.pad-btn[data-run]').forEach(btn => {
   btn.addEventListener('click', () => {
     const run = Number(btn.dataset.run);
     if(pendingExtra === 'noball'){ processDelivery({ type:'noball', batRuns:run, extraRuns:1, isWicket:false }); }
-    else if(pendingExtra === 'bye'){ processDelivery({ type:'bye', batRuns:0, extraRuns: Math.max(run,1), isWicket:false }); }
-    else if(pendingExtra === 'legbye'){ processDelivery({ type:'legbye', batRuns:0, extraRuns: Math.max(run,1), isWicket:false }); }
     else { processDelivery({ type:'normal', batRuns:run, extraRuns:0, isWicket:false }); }
   });
 });
 document.getElementById('pad-wide').addEventListener('click', () => processDelivery({ type:'wide', batRuns:0, extraRuns:1, isWicket:false }));
 document.getElementById('pad-noball').addEventListener('click', () => setPending('noball', 'No ball — now tap runs scored off the bat (0–6)'));
-document.getElementById('pad-bye').addEventListener('click', () => setPending('bye', 'Bye — now tap runs taken (1–6)'));
-document.getElementById('pad-legbye').addEventListener('click', () => setPending('legbye', 'Leg bye — now tap runs taken (1–6)'));
+document.getElementById('pad-bye').addEventListener('click', () => {
+  // Change Player = swap strike only, no runs, does NOT count as a legal ball
+  processDelivery({ type:'changeplayer', batRuns:0, extraRuns:0, isWicket:false });
+});
 
 document.getElementById('pad-undo').addEventListener('click', () => {
   if(undoStack.length === 0){ toast('Nothing to undo'); return; }
@@ -865,20 +913,44 @@ document.getElementById('pad-undo').addEventListener('click', () => {
 function openNextBatsmanModal(){
   document.getElementById('wicket-step-type').classList.add('hidden');
   document.getElementById('wicket-step-batsman').classList.add('hidden');
+  document.getElementById('wicket-step-runout-who').classList.add('hidden');
   document.getElementById('wicket-step-next').classList.remove('hidden');
   const inn = currentInnings();
+
+  // Fresh batsmen: never batted yet
+  const freshBatsmen = inn.squadBatting.filter(p => !inn.battingOrder.includes(p.id));
+  // Retired batsmen: batted before, marked retired, not currently out permanently
+  const retiredBatsmen = inn.squadBatting.filter(p =>
+    inn.battingOrder.includes(p.id) &&
+    inn.battingStats[p.id] &&
+    inn.battingStats[p.id].howOut === 'Retired'
+  );
+
+  const hint = document.getElementById('wicket-next-hint');
+  hint.textContent = retiredBatsmen.length > 0 ? 'Fresh batsmen or retired players who can return:' : '';
+
   const list = document.getElementById('wicket-next-batsman-list');
   list.innerHTML = '';
-  inn.squadBatting.filter(p => !inn.battingOrder.includes(p.id)).forEach(p => {
+
+  freshBatsmen.forEach(p => {
     const btn = document.createElement('button');
     btn.className = 'select-item';
-    btn.textContent = p.name;
-    btn.addEventListener('click', () => confirmNextBatsman(p.id));
+    btn.innerHTML = `<span>${escapeHtml(p.name)}</span>`;
+    btn.addEventListener('click', () => confirmNextBatsman(p.id, false));
     list.appendChild(btn);
   });
+
+  retiredBatsmen.forEach(p => {
+    const btn = document.createElement('button');
+    btn.className = 'select-item';
+    btn.innerHTML = `<span>${escapeHtml(inn.battingStats[p.id].name)}</span><span class="tag">↩ Return (Retired)</span>`;
+    btn.addEventListener('click', () => confirmNextBatsman(p.id, true));
+    list.appendChild(btn);
+  });
+
   showModal('modal-wicket');
 }
-function confirmNextBatsman(playerId){
+function confirmNextBatsman(playerId, isReturn){
   const inn = currentInnings();
   const lastBall = inn.ballLog[inn.ballLog.length - 1];
   const nonStrikerWasOut = lastBall && lastBall.wicketType === 'Run Out' && lastBall.dismissedEnd === 'nonStriker';
@@ -887,9 +959,16 @@ function confirmNextBatsman(playerId){
   } else {
     inn.strikerId = playerId;
   }
-  inn.battingOrder.push(playerId);
-  const nameObj = inn.squadBatting.find(p => p.id === playerId);
-  inn.battingStats[playerId] = { name: nameObj ? nameObj.name : '?', runs:0, balls:0, fours:0, sixes:0, out:false, howOut:null };
+  if(isReturn){
+    // Returning retired player: clear their 'Retired' status, keep accumulated stats
+    inn.battingStats[playerId].out = false;
+    inn.battingStats[playerId].howOut = null;
+  } else {
+    // Fresh batsman: add to batting order and create stats entry
+    inn.battingOrder.push(playerId);
+    const nameObj = inn.squadBatting.find(p => p.id === playerId);
+    inn.battingStats[playerId] = { name: nameObj ? nameObj.name : '?', runs:0, balls:0, fours:0, sixes:0, out:false, howOut:null };
+  }
   saveState();
   hideModal('modal-wicket');
   if(inn.legalBalls > 0 && inn.legalBalls % 6 === 0) openNextBowlerModal();
@@ -984,6 +1063,110 @@ document.getElementById('btn-menu-end-innings').addEventListener('click', () => 
   endInnings();
 });
 
+document.getElementById('btn-menu-edit-teams').addEventListener('click', () => {
+  hideModal('modal-live-menu');
+  openEditPlayingModal();
+});
+
+function openEditPlayingModal(){
+  const m = state.match;
+  const inn = currentInnings();
+  const sides = [
+    { side: inn.battingTeam, teamId: inn.battingTeam === 'A' ? m.teamAId : m.teamBId },
+    { side: inn.bowlingTeam, teamId: inn.bowlingTeam === 'A' ? m.teamAId : m.teamBId }
+  ];
+  // Edit the batting team's playing selection
+  const team = getTeam(sides[0].teamId);
+  if(!team){ toast('No team found'); return; }
+  document.getElementById('edit-playing-title').textContent = `Playing XI — ${team.name}`;
+  const list = document.getElementById('edit-playing-list');
+  list.innerHTML = '';
+  team.players.forEach(p => {
+    const isCurrentlyOnField = p.id === inn.strikerId || p.id === inn.nonStrikerId;
+    const btn = document.createElement('div');
+    btn.className = 'player-checkbox-row';
+    const checked = p.playing !== false;
+    btn.innerHTML = `
+      <input type="checkbox" ${checked ? 'checked' : ''} ${isCurrentlyOnField ? 'disabled' : ''} aria-label="Playing">
+      <div class="pname">${escapeHtml(p.name)}${isCurrentlyOnField ? '<span class="ptag" style="margin-left:6px;">batting now</span>' : ''}</div>`;
+    btn.querySelector('input').addEventListener('change', (e) => {
+      p.playing = e.target.checked;
+    });
+    list.appendChild(btn);
+  });
+  document.getElementById('btn-edit-playing-done').onclick = () => {
+    saveState();
+    // Rebuild the squad for the current innings to reflect changes
+    const newSquad = squadFor(sides[0].teamId, 2);
+    inn.squadBatting = newSquad;
+    inn.maxWickets = m.lastManBats ? newSquad.length : Math.max(newSquad.length - 1, 1);
+    saveState();
+    hideModal('modal-edit-playing');
+    toast('Playing XI updated');
+  };
+  document.getElementById('btn-edit-playing-cancel').onclick = () => hideModal('modal-edit-playing');
+  showModal('modal-edit-playing');
+}
+
+document.getElementById('btn-menu-extra-overs').addEventListener('click', () => {
+  hideModal('modal-live-menu');
+  const cur = state.match.overs;
+  document.getElementById('extra-overs-current').textContent = `Current total overs: ${cur}`;
+  document.getElementById('overs-display').textContent = cur;
+  showModal('modal-extra-overs');
+});
+let editOversVal = 0;
+document.getElementById('btn-overs-minus').addEventListener('click', () => {
+  const inn = currentInnings();
+  const minOvers = Math.ceil((inn ? inn.legalBalls : 0) / 6); // can't go below balls already bowled
+  const cur = parseInt(document.getElementById('overs-display').textContent);
+  if(cur > minOvers + 1){
+    document.getElementById('overs-display').textContent = cur - 1;
+  } else {
+    toast(`Can't go below overs already bowled (${minOvers})`);
+  }
+});
+document.getElementById('btn-overs-plus').addEventListener('click', () => {
+  const cur = parseInt(document.getElementById('overs-display').textContent);
+  document.getElementById('overs-display').textContent = cur + 1;
+});
+document.getElementById('btn-extra-overs-add').addEventListener('click', () => {
+  const newVal = parseInt(document.getElementById('overs-display').textContent);
+  const old = state.match.overs;
+  state.match.overs = newVal;
+  saveState();
+  hideModal('modal-extra-overs');
+  renderLive();
+  const diff = newVal - old;
+  toast(diff > 0 ? `${diff} over${diff===1?'':'s'} added — now ${newVal} total` : diff < 0 ? `Reduced to ${newVal} overs` : 'Overs unchanged');
+});
+document.getElementById('btn-extra-overs-cancel').addEventListener('click', () => hideModal('modal-extra-overs'));
+
+// ---- Declare button ----
+document.getElementById('pad-declare').addEventListener('click', () => {
+  const m = state.match;
+  const inn = currentInnings();
+  const list = document.getElementById('declare-team-list');
+  list.innerHTML = '';
+  // Only the batting team can declare
+  const battingTeamName = getMatchTeamName(m, inn.battingTeam);
+  const btn = document.createElement('button');
+  btn.className = 'select-item';
+  btn.textContent = `${battingTeamName} declares`;
+  btn.addEventListener('click', () => {
+    hideModal('modal-declare');
+    inn.completionReason = 'declared';
+    inn.isComplete = true;
+    inn.declaredBy = inn.battingTeam;
+    saveState();
+    toast(`${battingTeamName} have declared!`);
+    endInnings();
+  });
+  list.appendChild(btn);
+  showModal('modal-declare');
+});
+document.getElementById('btn-declare-cancel').addEventListener('click', () => hideModal('modal-declare'));
+
 // ===================== SCORECARD =====================
 let scorecardSourceId = null; // 'live' or a match id from history/result
 let scorecardReturnTo = 'home';
@@ -1062,6 +1245,39 @@ document.getElementById('btn-scorecard-back').addEventListener('click', () => na
 document.getElementById('btn-scorecard-share').addEventListener('click', async () => {
   const m = resolveScorecardMatch();
   if(!m || m.innings.length === 0){ toast('Nothing to share yet'); return; }
+
+  // Try screenshot first
+  if(typeof html2canvas !== 'undefined'){
+    try{
+      toast('Capturing scorecard...');
+      const el = document.getElementById('scorecard-body');
+      const canvas = await html2canvas(el, {
+        backgroundColor: '#F2EAD3',
+        scale: 2,
+        useCORS: true,
+        logging: false
+      });
+      canvas.toBlob(async (blob) => {
+        if(navigator.share && navigator.canShare && navigator.canShare({ files: [new File([blob], 'scorecard.png', { type:'image/png' })] })){
+          try{
+            await navigator.share({ files: [new File([blob], 'scorecard.png', { type:'image/png' })], title: 'CrickScore Scorecard' });
+          }catch(e){ fallbackTextShare(m); }
+        } else {
+          // Trigger download as fallback
+          const url = URL.createObjectURL(blob);
+          const a = document.createElement('a');
+          a.href = url; a.download = 'scorecard.png'; a.click();
+          URL.revokeObjectURL(url);
+          toast('Scorecard saved as image');
+        }
+      }, 'image/png');
+      return;
+    }catch(e){ /* fall through to text */ }
+  }
+  fallbackTextShare(m);
+});
+
+async function fallbackTextShare(m){
   let text = `🏏 CrickScore — Full Scorecard\n${m.place || ''} ${m.field ? '· '+m.field : ''}\n\n`;
   m.innings.forEach(inn => {
     text += `${getMatchTeamName(m, inn.battingTeam)}: ${inn.totalRuns}/${inn.totalWickets} (${formatOvers(inn.legalBalls)})\n`;
@@ -1083,7 +1299,7 @@ document.getElementById('btn-scorecard-share').addEventListener('click', async (
     try{ await navigator.clipboard.writeText(text); toast('Copied to clipboard'); }
     catch(e){ toast('Could not share or copy'); }
   }
-});
+}
 
 // ===================== RESULT =====================
 function renderResultScreen(){
